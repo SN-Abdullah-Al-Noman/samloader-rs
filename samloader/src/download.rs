@@ -48,6 +48,10 @@ struct ProgressWrapper<'a> {
 }
 
 impl DownloadProgress for ProgressWrapper<'_> {
+    fn set_length(&self, len: u64) {
+        self.progress_bar.set_length(len);
+    }
+
     fn inc(&self, bytes: u64) {
         self.progress_bar.inc(bytes);
     }
@@ -99,7 +103,7 @@ pub(crate) fn action_download(args: DownloadArgs) {
 
     println!("Downloading {} to {}", client.info.filename, final_out);
 
-    let progress = ProgressBar::new(client.info.size)
+    let progress = ProgressBar::no_length()
         .with_style(ProgressStyle::with_template(PROGRESS_TEMPLATE).unwrap());
     progress.enable_steady_tick(Duration::from_secs(1));
 

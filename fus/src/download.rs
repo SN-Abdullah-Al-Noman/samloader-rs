@@ -29,6 +29,9 @@ use std::time::Duration;
 
 /// A trait for reporting firmware download progress and logging messages.
 pub trait DownloadProgress: Send + Sync {
+    /// Sets the total length of the progress.
+    fn set_length(&self, len: u64);
+
     /// Increments the download progress by the specified number of bytes.
     fn inc(&self, bytes: u64);
 
@@ -44,6 +47,7 @@ pub trait DownloadProgress: Send + Sync {
 
 // Convenient no-op implementation for silent downloads (e.g. in tests)
 impl DownloadProgress for () {
+    fn set_length(&self, _len: u64) {}
     fn inc(&self, _bytes: u64) {}
     fn position(&self) -> u64 {
         0
@@ -73,6 +77,8 @@ impl FusClient {
         let mut map = unsafe { MmapMut::map_mut(&file)? };
 
         self.init_download()?;
+
+        progress.set_length(self.info.size);
 
         // Round up to the nearest 16 byte boundary
         let chunk_size = (self.info.size / threads / 16 + 1) * 16;
