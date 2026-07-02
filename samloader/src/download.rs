@@ -56,11 +56,11 @@ impl DownloadProgress for ProgressWrapper<'_> {
         self.progress_bar.position()
     }
 
-    fn println(&self, msg: String) {
+    fn println(&self, msg: &str) {
         self.progress_bar.println(msg);
     }
 
-    fn println_verbose(&self, msg: String) {
+    fn println_verbose(&self, msg: &str) {
         if self.verbose {
             self.progress_bar.println(msg);
         }

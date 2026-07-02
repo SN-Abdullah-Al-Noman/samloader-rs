@@ -36,10 +36,10 @@ pub trait DownloadProgress: Send + Sync {
     fn position(&self) -> u64;
 
     /// Prints a standard log or status message.
-    fn println(&self, msg: String);
+    fn println(&self, msg: &str);
 
     /// Prints a verbose log or status message (implementation decides if it is shown).
-    fn println_verbose(&self, msg: String);
+    fn println_verbose(&self, msg: &str);
 }
 
 // Convenient no-op implementation for silent downloads (e.g. in tests)
@@ -48,8 +48,8 @@ impl DownloadProgress for () {
     fn position(&self) -> u64 {
         0
     }
-    fn println(&self, _msg: String) {}
-    fn println_verbose(&self, _msg: String) {}
+    fn println(&self, _msg: &str) {}
+    fn println_verbose(&self, _msg: &str) {}
 }
 
 impl FusClient {
@@ -266,7 +266,7 @@ fn run_worker(pool: &Pool<'_>, client: &FusClient, progress: &impl DownloadProgr
                     let remaining = state.live;
                     pool.available.notify_all();
                     drop(state);
-                    progress.println_verbose(format!(
+                    progress.println_verbose(&format!(
                         "Connection throttled at offset {stall_off}; \
                          reducing to {remaining} connection(s)"
                     ));
@@ -319,7 +319,7 @@ fn download_chunk(
                 if retries > MAX_STALL_RETRIES {
                     return ChunkOutcome::Stalled { decrypted: dec_pos };
                 }
-                progress.println_verbose(format!(
+                progress.println_verbose(&format!(
                     "Request error ({e}); retry {retries}/{MAX_STALL_RETRIES} at offset {}",
                     start + dec_pos as u64
                 ));
@@ -363,7 +363,7 @@ fn download_chunk(
         if retries > MAX_STALL_RETRIES {
             return ChunkOutcome::Stalled { decrypted: dec_pos };
         }
-        progress.println_verbose(format!(
+        progress.println_verbose(&format!(
             "Download error ({stall}); retry {retries}/{MAX_STALL_RETRIES}, \
              resuming at offset {}",
             start + dec_pos as u64
