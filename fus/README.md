@@ -15,7 +15,7 @@ A pure-Rust client library for interacting with the Samsung Firmware Update Serv
 ### Basic Version Checking & Downloading
 
 ```rust
-use samloader_fus::{FusClient, fetch_version_xml};
+use samloader_fus::{FusClient, download_firmware, fetch_version_xml};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Fetch version info
@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 3. Download the firmware in parallel
     // Implement `DownloadProgress` or pass `&()` for a silent download.
-    client.download("firmware.zip", 8, &())?;
+    download_firmware(&client, "firmware.zip", 8, &())?;
     println!("Download complete!");
 
     Ok(())

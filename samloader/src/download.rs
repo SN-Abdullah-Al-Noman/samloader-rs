@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use indicatif::{ProgressBar, ProgressStyle};
-use samloader_fus::{DownloadProgress, FusClient, fetch_version_xml};
+use samloader_fus::{DownloadProgress, FusClient, download_firmware, fetch_version_xml};
 use std::time::Duration;
 
 const PROGRESS_TEMPLATE: &str =
@@ -112,7 +112,7 @@ pub(crate) fn action_download(args: DownloadArgs) {
         verbose: args.verbose,
     };
 
-    if let Err(e) = client.download(&final_out, args.threads, &wrapper) {
+    if let Err(e) = download_firmware(&client, &final_out, args.threads, &wrapper) {
         progress.abandon();
         eprintln!("\nERROR: Download failed: {e}");
         std::process::exit(1);

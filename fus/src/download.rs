@@ -56,90 +56,92 @@ impl DownloadProgress for () {
     fn println_verbose(&self, _msg: &str) {}
 }
 
-impl FusClient {
-    /// Downloads the firmware binary in parallel across multiple threads, decrypting it in place,
-    /// and writing to the file at `path`.
-    pub fn download<P, PathRef>(&self, path: PathRef, threads: u64, progress: &P) -> Result<()>
-    where
-        P: DownloadProgress,
-        PathRef: AsRef<Path>,
+/// Downloads the firmware binary in parallel across multiple threads, decrypting it in place,
+/// and writing to the file at `path`.
+pub fn download_firmware<P, PathRef>(
+    client: &FusClient,
+    path: PathRef,
+    threads: u64,
+    progress: &P,
+) -> Result<()>
+where
+    P: DownloadProgress,
+    PathRef: AsRef<Path>,
+{
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)?;
+
+    // Pre-allocate file
+    file.set_len(client.info.size)?;
+
+    let mut map = unsafe { MmapMut::map_mut(&file)? };
+
+    client.init_download()?;
+
+    progress.set_length(client.info.size);
+
+    // Round up to the nearest 16 byte boundary
+    let chunk_size = (client.info.size / threads / 16 + 1) * 16;
+
+    let mut queue = VecDeque::new();
     {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(path)?;
+        let mut chunks = map.chunks_mut(chunk_size as usize).enumerate().peekable();
+        while let Some((i, buf)) = chunks.next() {
+            let is_last = chunks.peek().is_none();
 
-        // Pre-allocate file
-        file.set_len(self.info.size)?;
+            let start = i as u64 * chunk_size;
+            // Ensure the last range covers the remainder of the file
+            let end = if is_last {
+                None
+            } else {
+                Some(start + chunk_size - 1)
+            };
 
-        let mut map = unsafe { MmapMut::map_mut(&file)? };
-
-        self.init_download()?;
-
-        progress.set_length(self.info.size);
-
-        // Round up to the nearest 16 byte boundary
-        let chunk_size = (self.info.size / threads / 16 + 1) * 16;
-
-        let mut queue = VecDeque::new();
-        {
-            let mut chunks = map.chunks_mut(chunk_size as usize).enumerate().peekable();
-            while let Some((i, buf)) = chunks.next() {
-                let is_last = chunks.peek().is_none();
-
-                let start = i as u64 * chunk_size;
-                // Ensure the last range covers the remainder of the file
-                let end = if is_last {
-                    None
-                } else {
-                    Some(start + chunk_size - 1)
-                };
-
-                queue.push_back(Chunk { buf, start, end });
-            }
+            queue.push_back(Chunk { buf, start, end });
         }
-
-        // Never spawn more connections than there are ranges to download.
-        let n_workers = queue.len().min(threads as usize);
-        let pool = Pool {
-            inner: Mutex::new(PoolInner {
-                queue,
-                in_flight: 0,
-                live: n_workers,
-                error: None,
-            }),
-            available: Condvar::new(),
-        };
-
-        thread::scope(|s| {
-            let pool = &pool;
-            let client = self;
-            for _ in 0..n_workers {
-                s.spawn(move || run_worker(pool, client, progress));
-
-                // Stagger connection setup to avoid hammering the server
-                thread::sleep(Duration::from_millis(100));
-            }
-        });
-
-        // The pool still borrows `map` through its (now-drained) work queue; drop it
-        // before reading back from the mapping.
-        drop(pool);
-
-        let last_byte = map.last().copied().unwrap_or(0);
-        map.flush()?;
-        drop(map);
-
-        // Handle padding removal if needed
-        if last_byte > 0 && last_byte <= 16 {
-            let file_len = file.metadata().map(|m| m.len()).unwrap_or(self.info.size);
-            file.set_len(file_len - last_byte as u64)?;
-        }
-
-        Ok(())
     }
+
+    // Never spawn more connections than there are ranges to download.
+    let n_workers = queue.len().min(threads as usize);
+    let pool = Pool {
+        inner: Mutex::new(PoolInner {
+            queue,
+            in_flight: 0,
+            live: n_workers,
+            error: None,
+        }),
+        available: Condvar::new(),
+    };
+
+    thread::scope(|s| {
+        let pool = &pool;
+        for _ in 0..n_workers {
+            s.spawn(move || run_worker(pool, client, progress));
+
+            // Stagger connection setup to avoid hammering the server
+            thread::sleep(Duration::from_millis(100));
+        }
+    });
+
+    // The pool still borrows `map` through its (now-drained) work queue; drop it
+    // before reading back from the mapping.
+    drop(pool);
+
+    let last_byte = map.last().copied().unwrap_or(0);
+    map.flush()?;
+    drop(map);
+
+    // Handle padding removal if needed
+    if last_byte > 0 && last_byte <= 16 {
+        let file_len = file.metadata().map(|m| m.len()).unwrap_or(client.info.size);
+        file.set_len(file_len - last_byte as u64)?;
+    }
+
+    Ok(())
 }
 
 /// A contiguous, not-yet-downloaded byte range mapped onto its slice of the
