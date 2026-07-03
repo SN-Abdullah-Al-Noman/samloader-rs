@@ -113,28 +113,30 @@ pub struct Lz4FrameHeader {
 
 impl Lz4FrameHeader {
     /// Parses the LZ4 frame header from a reader.
-    pub fn parse<R: Read>(mut reader: R) -> Result<Self, String> {
+    pub fn parse<R: Read>(mut reader: R) -> io::Result<Self> {
         let mut magic_bytes = [0u8; 4];
-        reader
-            .read_exact(&mut magic_bytes)
-            .map_err(|_| "Failed to read magic number")?;
+        reader.read_exact(&mut magic_bytes)?;
         let magic = u32::from_le_bytes(magic_bytes);
 
         if magic != 0x184D2204 {
             // We only support the standard LZ4 frame magic in this context,
             // not the skippable frames (0x184D2A50 - 0x184D2A5F)
-            return Err(format!("Not a valid LZ4 frame. Magic: 0x{:08X}", magic));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Not a valid LZ4 frame. Magic: 0x{:08X}", magic),
+            ));
         }
 
         let mut flg_byte = [0u8; 1];
-        reader
-            .read_exact(&mut flg_byte)
-            .map_err(|_| "Failed to read FLG byte")?;
+        reader.read_exact(&mut flg_byte)?;
         let flg = flg_byte[0];
 
         let version = (flg >> 6) & 0x03;
         if version != 1 {
-            return Err(format!("Unsupported LZ4 version: {}", version));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Unsupported LZ4 version: {}", version),
+            ));
         }
 
         let block_independence = ((flg >> 5) & 0x01) == 1;
@@ -143,22 +145,32 @@ impl Lz4FrameHeader {
         let dict_id_flag = (flg & 0x01) == 1;
 
         if !content_size_flag {
-            return Err("LZ4 content size must be enabled".to_string());
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "LZ4 content size must be enabled",
+            ));
         }
         if block_checksum {
-            return Err("LZ4 block checksum must be disabled".to_string());
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "LZ4 block checksum must be disabled",
+            ));
         }
         if !block_independence {
-            return Err("LZ4 block independence must be enabled".to_string());
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "LZ4 block independence must be enabled",
+            ));
         }
         if dict_id_flag {
-            return Err("LZ4 dictionary ID must be disabled".to_string());
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "LZ4 dictionary ID must be disabled",
+            ));
         }
 
         let mut bd_byte = [0u8; 1];
-        reader
-            .read_exact(&mut bd_byte)
-            .map_err(|_| "Failed to read BD byte")?;
+        reader.read_exact(&mut bd_byte)?;
         let bd = bd_byte[0];
 
         let block_max_size_code = (bd >> 4) & 0x07;
@@ -168,23 +180,19 @@ impl Lz4FrameHeader {
             6 => 1024 * 1024,
             7 => 4 * 1024 * 1024,
             _ => {
-                return Err(format!(
-                    "Invalid block max size code: {}",
-                    block_max_size_code
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Invalid block max size code: {}", block_max_size_code),
                 ));
             }
         };
 
         let mut content_size_bytes = [0u8; 8];
-        reader
-            .read_exact(&mut content_size_bytes)
-            .map_err(|_| "Failed to read content size")?;
+        reader.read_exact(&mut content_size_bytes)?;
         let content_size = u64::from_le_bytes(content_size_bytes);
 
         let mut hc_byte = [0u8; 1];
-        reader
-            .read_exact(&mut hc_byte)
-            .map_err(|_| "Failed to read header checksum")?;
+        reader.read_exact(&mut hc_byte)?;
 
         Ok(Self {
             content_size,
