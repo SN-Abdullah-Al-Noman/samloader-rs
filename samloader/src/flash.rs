@@ -16,17 +16,36 @@
 
 use crate::PartitionArg;
 use crate::print_error;
+use indicatif::{ProgressBar, ProgressStyle};
 use memmap2::{Mmap, MmapOptions};
 use samloader_odin::{
-    FirmwareFile, FirmwareInfo, FirmwareLz4File, Lz4FrameHeader, OdinManager, UsbBackendOption,
-    create_backend, verify_md5_footer,
+    FirmwareFile, FirmwareInfo, FirmwareLz4File, FlashProgress, Lz4FrameHeader, OdinManager,
+    UsbBackendOption, create_backend, verify_md5_footer,
 };
 use samloader_pit::{PitData, PitEntry};
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
+use std::time::Duration;
 use tar::Archive;
+
+const PROGRESS_TEMPLATE: &str =
+    "{msg}\n[{elapsed_precise}] [{bar:40}] {bytes}/{total_bytes} ({bytes_per_sec}) [{eta_precise}]";
+
+struct ProgressWrapper<'a> {
+    progress_bar: &'a ProgressBar,
+}
+
+impl FlashProgress for ProgressWrapper<'_> {
+    fn set_length(&self, len: u64) {
+        self.progress_bar.set_length(len);
+    }
+
+    fn inc(&self, bytes: u64) {
+        self.progress_bar.inc(bytes);
+    }
+}
 
 struct IndexedEntry {
     original_name: String,
@@ -349,12 +368,12 @@ pub(crate) fn action_flash(
     }
 
     if repartition {
-        println!("Uploading PIT");
+        println!("Flashing PIT");
         if let Err(e) = odin_manager.send_pit_data(pit_file_bytes.as_ref().unwrap()) {
             print_error!("{}", e);
             return 1;
         }
-        println!("PIT upload successful\n");
+        println!("PIT flash successful\n");
     }
 
     let pit_buffer = match odin_manager.download_pit_file() {
@@ -487,24 +506,38 @@ pub(crate) fn action_flash(
     }
 
     for info in partition_infos {
+        let name = match &info {
+            FirmwareInfo::Normal(f) => f.pit_entry.partition_name.to_string_lossy(),
+            FirmwareInfo::Lz4(f) => f.pit_entry.partition_name.to_string_lossy(),
+        };
+
+        let pb = ProgressBar::no_length()
+            .with_style(ProgressStyle::with_template(PROGRESS_TEMPLATE).unwrap());
+        pb.enable_steady_tick(Duration::from_secs(1));
+        pb.set_message(format!("Flashing {}", name));
+
+        let progress = ProgressWrapper { progress_bar: &pb };
+
         match info {
             FirmwareInfo::Normal(f) => {
-                println!("Uploading {}", f.pit_entry.partition_name);
-                if let Err(e) = odin_manager.send_file(&f) {
+                if let Err(e) = odin_manager.send_file(&f, &progress) {
+                    pb.abandon_with_message(format!("{} flash failed", name));
                     print_error!("{}", e);
                     return 1;
                 }
-                println!("{} upload successful\n", f.pit_entry.partition_name);
             }
             FirmwareInfo::Lz4(f) => {
-                println!("Uploading {}", f.pit_entry.partition_name);
-                if let Err(e) = odin_manager.send_lz4_file(&f) {
+                if let Err(e) = odin_manager.send_lz4_file(&f, &progress) {
+                    pb.abandon_with_message(format!("{} flash failed", name));
                     print_error!("{}", e);
                     return 1;
                 }
-                println!("{} upload successful\n", f.pit_entry.partition_name);
             }
         }
+
+        pb.set_message(format!("{} flash successful", name));
+        pb.finish();
+        println!();
     }
 
     if let Err(e) = odin_manager.end_session() {

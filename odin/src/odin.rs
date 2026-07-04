@@ -20,6 +20,20 @@ use crate::usb::UsbTransfer;
 use samloader_pit::{BinaryType, PitEntry};
 use std::time::Duration;
 
+/// A trait for reporting partition flash/upload progress.
+pub trait FlashProgress: Send + Sync {
+    /// Sets the total length of the progress (in bytes).
+    fn set_length(&self, len: u64);
+
+    /// Increments the progress by the specified number of bytes.
+    fn inc(&self, bytes: u64);
+}
+
+impl FlashProgress for () {
+    fn set_length(&self, _len: u64) {}
+    fn inc(&self, _bytes: u64) {}
+}
+
 /// Driver and session manager coordinating the Samsung Odin/Loke flashing protocol.
 pub struct OdinManager {
     verbose: bool,
@@ -350,6 +364,7 @@ impl OdinManager {
         &mut self,
         sequences: Iter,
         pit_entry: &PitEntry,
+        progress: &impl FlashProgress,
     ) -> Result<(), OdinError>
     where
         Bytes: AsRef<[u8]>,
@@ -378,16 +393,21 @@ impl OdinManager {
                 ),
             };
 
-            self.send_one_sequence(&start_packet, &end_packet, sequence_data)?;
+            self.send_one_sequence(&start_packet, &end_packet, sequence_data, progress)?;
         }
 
         Ok(())
     }
 
     /// Flashes an uncompressed partition firmware file payload to the device.
-    pub fn send_file(&mut self, info: &crate::firmware::FirmwareFile) -> Result<(), OdinError> {
+    pub fn send_file(
+        &mut self,
+        info: &crate::firmware::FirmwareFile,
+        progress: &impl FlashProgress,
+    ) -> Result<(), OdinError> {
+        progress.set_length(info.file.len() as u64);
         let sequences = info.sequences(self.file_transfer_sequence_max_bytes());
-        self.send_raw_sequences(sequences, info.pit_entry)
+        self.send_raw_sequences(sequences, info.pit_entry, progress)
     }
 
     /// Flashes an LZ4-compressed partition firmware file payload to the device,
@@ -395,11 +415,15 @@ impl OdinManager {
     pub fn send_lz4_file(
         &mut self,
         info: &crate::firmware::FirmwareLz4File,
+        progress: &impl FlashProgress,
     ) -> Result<(), OdinError> {
         if !self.lz4_supported || info.header.block_max_size != 1024 * 1024 {
+            progress.set_length(info.header.content_size);
             let sequences = info.decompressed_sequences(self.file_transfer_sequence_max_bytes());
-            return self.send_raw_sequences(sequences, info.pit_entry);
+            return self.send_raw_sequences(sequences, info.pit_entry, progress);
         }
+
+        progress.set_length(info.file.len() as u64);
 
         let packet = RequestPacket::lz4_file_transfer_flash();
         self.request_and_response(&packet, EmptySendKind::After, 3000)
@@ -426,7 +450,7 @@ impl OdinManager {
                 ),
             };
 
-            self.send_one_sequence(&start_packet, &end_packet, sequence_data)?;
+            self.send_one_sequence(&start_packet, &end_packet, sequence_data, progress)?;
         }
 
         Ok(())
@@ -437,6 +461,7 @@ impl OdinManager {
         start_packet: &RequestPacket,
         end_packet: &RequestPacket,
         sequence_data: &[u8],
+        progress: &impl FlashProgress,
     ) -> Result<(), OdinError> {
         self.request_and_response(start_packet, EmptySendKind::BeforeAndAfter, 3000)
             .map_err(|_| OdinError::FileTransferSequenceBeginFailed)?;
@@ -489,6 +514,8 @@ impl OdinManager {
             if !success {
                 return Err(OdinError::FilePartResponseReceiveFailed);
             }
+
+            progress.inc(file_buffer.len() as u64);
         }
 
         self.request_and_response(

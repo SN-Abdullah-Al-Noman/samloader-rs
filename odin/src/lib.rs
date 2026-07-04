@@ -26,7 +26,7 @@ pub use error::OdinError;
 pub use firmware::{
     FirmwareFile, FirmwareInfo, FirmwareLz4File, Lz4FrameHeader, verify_md5_footer,
 };
-pub use odin::{OdinManager, reboot_download};
+pub use odin::{FlashProgress, OdinManager, reboot_download};
 pub use usb::{UsbBackend, UsbBackendOption, UsbTransfer, create_backend, detect_device};
 
 #[cfg(feature = "nusb")]
