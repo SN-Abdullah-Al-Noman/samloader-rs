@@ -77,8 +77,8 @@ fn scan_tar_packages(
     for pkg in packages {
         let file = match File::open(pkg) {
             Ok(f) => f,
-            Err(_) => {
-                print_error!("Failed to open package file \"{}\"", pkg);
+            Err(e) => {
+                print_error!("Failed to open package file \"{}\": {}", pkg, e);
                 return Err(1);
             }
         };
@@ -316,8 +316,8 @@ pub(crate) fn action_flash(
     if let Some(pit_path) = pit {
         let mut f = match File::open(pit_path) {
             Ok(file) => file,
-            Err(_) => {
-                print_error!("Failed to open explicit PIT file \"{}\"", pit_path);
+            Err(e) => {
+                print_error!("Failed to open explicit PIT file \"{}\": {}", pit_path, e);
                 return 1;
             }
         };
@@ -454,13 +454,20 @@ pub(crate) fn action_flash(
             }
         };
 
-        let Ok((mmap, file_size)) = File::open(&part.filename).and_then(|f| {
+        let (mmap, file_size) = match File::open(&part.filename).and_then(|f| {
             let file_size = f.metadata()?.len();
             let mmap = unsafe { MmapOptions::new().len(file_size as usize).map(&f)? };
             Ok((mmap, file_size))
-        }) else {
-            print_error!("Failed to open or memory map file \"{}\"", part.filename);
-            return 1;
+        }) {
+            Ok((mmap, file_size)) => (mmap, file_size),
+            Err(e) => {
+                print_error!(
+                    "Failed to open or memory map file \"{}\": {}",
+                    part.filename,
+                    e
+                );
+                return 1;
+            }
         };
 
         let Some(info) = create_firmware_info(
