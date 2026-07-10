@@ -478,6 +478,12 @@ fn main() {
             if let Some(userdata) = sub_matches.get_one::<String>("userdata") {
                 packages.push(userdata.clone());
             }
+            for part in &packages {
+                if !std::path::Path::new(&part).exists() {
+                    print_error!("File \"{}\" does not exist.", part);
+                    std::process::exit(1);
+                }
+            }
 
             let mut partitions = Vec::new();
             if let Some(args) = sub_matches.get_many::<String>("partition") {
@@ -501,9 +507,21 @@ fn main() {
                     });
                 }
             }
+            for part in &partitions {
+                if !std::path::Path::new(&part.filename).exists() {
+                    print_error!("File \"{}\" does not exist.", part.filename);
+                    std::process::exit(1);
+                }
+            }
 
             if packages.is_empty() && partitions.is_empty() {
                 print_error!("No packages, files, or partitions specified for flashing.");
+                std::process::exit(1);
+            }
+
+            let pit = sub_matches.get_one::<String>("pit").map(|s| s.as_str());
+            if let Some(pit_file) = pit.filter(|p| !std::path::Path::new(p).exists()) {
+                print_error!("PIT file \"{}\" does not exist.", pit_file);
                 std::process::exit(1);
             }
 
@@ -515,7 +533,7 @@ fn main() {
                 sub_matches.get_flag("wait"),
                 sub_matches.get_flag("skip-size-check"),
                 sub_matches.get_flag("skip-md5"),
-                sub_matches.get_one::<String>("pit").map(|s| s.as_str()),
+                pit,
                 &packages,
                 &partitions,
             );
