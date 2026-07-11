@@ -14,11 +14,12 @@ Commands:
   flash            Flashes one or more firmware files to your phone
   verify-md5       Verifies the MD5 checksum of one or more .tar.md5 files
   reboot-download  Boot a connected Samsung device into download mode
+  fix-usb          Add udev rules to fix USB device access permissions on Linux
   help             Print this message or the help of the given subcommand(s)
 
 Options:
       --verbose                    Enable verbose output
-      --usb-backend <usb_backend>  The USB backend to use [default: libusb] [possible values: libusb, vcom]
+      --usb-backend <usb_backend>  The USB backend to use [default: nusb] [possible values: nusb, vcom]
   -h, --help                       Print help
   -V, --version                    Print version
 ```
