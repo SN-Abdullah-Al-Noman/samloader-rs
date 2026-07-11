@@ -313,8 +313,6 @@ impl OdinManager {
 
     /// Downloads/dumps the active Partition Information Table (PIT) file from the device.
     pub fn download_pit_file(&mut self) -> Result<Vec<u8>, OdinError> {
-        println!("Downloading device's PIT file...");
-
         let packet = RequestPacket::pit_file_dump();
         let file_size = self
             .request_and_response(&packet, EmptySendKind::After, 3000)
@@ -345,7 +343,6 @@ impl OdinManager {
         self.request_and_response(&packet, EmptySendKind::After, 3000)
             .map_err(|_| OdinError::PitFileEndSendFailed)?;
 
-        println!("PIT file download successful.\n");
         Ok(buffer)
     }
 

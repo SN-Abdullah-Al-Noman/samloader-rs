@@ -75,6 +75,7 @@ pub(crate) fn action_dump_pit(
 
     let mut success = true;
 
+    println!("Downloading device's PIT file");
     match odin_manager.download_pit_file() {
         Ok(pit_buffer) => {
             if let Err(e) = output_file.write_all(&pit_buffer) {
@@ -156,6 +157,7 @@ pub(crate) fn action_print_pit(
         let mut success = true;
         let mut device_pit_data = None;
 
+        println!("Downloading device's PIT file");
         match odin_manager.download_pit_file() {
             Ok(device_pit) => match PitData::new(&device_pit) {
                 Ok(pit_data) => {

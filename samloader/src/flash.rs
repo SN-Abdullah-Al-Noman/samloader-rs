@@ -376,6 +376,7 @@ pub(crate) fn action_flash(
         println!("PIT flash successful\n");
     }
 
+    println!("Downloading device's PIT file");
     let pit_buffer = match odin_manager.download_pit_file() {
         Ok(buf) => buf,
         Err(e) => {
