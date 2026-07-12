@@ -162,9 +162,14 @@ impl OdinManager {
         let _ = self.usb.send_data(&packet.pack(), 500, false);
 
         // This is required for some devices e.g. A55.
+        self.send_empty(100);
         self.receive_empty(100);
 
         Ok(())
+    }
+
+    fn send_empty(&mut self, timeout: i32) {
+        self.usb.send_data(&[], timeout, false);
     }
 
     /// Sends a raw string message over the transport connection.
@@ -213,7 +218,7 @@ impl OdinManager {
         if empty_send_kind == EmptySendKind::Before
             || empty_send_kind == EmptySendKind::BeforeAndAfter
         {
-            self.usb.send_data(&[], 100, false);
+            self.send_empty(100);
         }
         if !self.usb.send_data(&packet_bytes, timeout, true) {
             return Err(());
@@ -221,7 +226,7 @@ impl OdinManager {
         if empty_send_kind == EmptySendKind::After
             || empty_send_kind == EmptySendKind::BeforeAndAfter
         {
-            self.usb.send_data(&[], 100, false);
+            self.send_empty(100);
         }
         Ok(())
     }
