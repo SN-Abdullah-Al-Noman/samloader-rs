@@ -19,4 +19,3 @@ libc = { workspace = true }
 cfg-if = { workspace = true }
 
 [features]
-default = ["nusb", "serialport"]
